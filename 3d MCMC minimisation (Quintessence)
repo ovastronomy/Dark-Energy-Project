@@ -1,0 +1,388 @@
+import numpy as np
+%matplotlib inline
+import matplotlib.pyplot as plt
+
+import scipy.stats    
+from scipy.optimize import minimize
+
+import scipy.integrate as integrate
+import scipy.special as special
+
+from scipy.integrate import quad
+
+sndata = np.array(np.loadtxt('newdata.txt', dtype=str)) #Reads text file and converts its data to an numpy array
+
+names = np.array([]) #Setting up empty array for each data column
+redshifts = np.array([])
+eff_mags = np.array([])
+errors = np.array([])
+
+H0 = 75 #Current value of the Hubble parameter in km/s/Mpc
+c = 3*(10**5) #Speed of light in km/s
+
+for i in range(len(sndata)): #Loops over each supernova data set
+    names = np.append(names, sndata[i,0]) #Adds the corresponding variable to the array
+    redshifts = np.append(redshifts, sndata[i,1])
+    eff_mags = np.append(eff_mags, sndata[i,2])
+    errors = np.append(errors, sndata[i,3])
+
+#Now I have arrays for each variable saved as strings in arrays
+
+redshifts = np.asarray(redshifts, dtype = np.float64, order ='C') #Converts the numerical variables to floats
+eff_mags = np.asarray(eff_mags, dtype = np.float64, order ='C')
+errors = np.asarray(errors, dtype = np.float64, order ='C')
+
+eff_mags = eff_mags-19.31 #correction from raw data
+
+fluxes = np.array(np.power(10,((-20.5-eff_mags)/2.5))) #Solves the magnitude equation to find flux in erg/cm^2/s/Angstrom
+fluxerrs = (np.array(abs(np.power(10,((-20.5-(errors)/2.5)))))) #Works out the errors of the fluxes in erg/cm^2/s/Angstrom
+
+
+little_zs_index = np.array([]) #Creates an empty array for the indices of nearby (little redshift<0.11) supernovae
+for i in range(len(redshifts)): #Uses a for loop to check every element in the redshifts
+    if redshifts[i] < 0.11: #Condition for little redshifts
+        little_zs_index = np.append(little_zs_index, i) #Appends the array with the index number if the redshift is small
+        
+little_zs_flux = np.array([]) #Creates an empty array for the fluxes of small redshift supernovae
+for j in range(len(little_zs_index)): #Uses a for loop to cycle through each index
+    little_zs_flux = np.append(little_zs_flux, fluxes[int(little_zs_index[j])]) #Adds the flux of the specific small redshift indices from the list
+    
+little_zs_fluxerrs = np.array([]) #Same as above but for flux errors
+for j in range(len(little_zs_index)):
+    little_zs_fluxerrs = np.append(little_zs_fluxerrs, fluxerrs[int(little_zs_index[j])])
+    
+#Now below is the same but for large z>0.11
+
+large_zs_index = np.array([])
+for i in range(len(redshifts)):
+    if redshifts[i] > 0.11:
+        large_zs_index = np.append(large_zs_index, i)
+        
+large_zs_flux = np.array([])
+for j in range(len(large_zs_index)):
+    large_zs_flux = np.append(large_zs_flux, fluxes[int(large_zs_index[j])])
+    
+large_zs_fluxerrs = np.array([])
+for j in range(len(large_zs_index)):
+    large_zs_fluxerrs = np.append(large_zs_fluxerrs, fluxerrs[int(large_zs_index[j])])
+    
+#All for loops above works to get arrays of big and small redshift data for flux and the flux errors
+
+large_zs = np.array([]) #Same as above but collects the small and large redshifts in separate arrays
+for j in range(len(large_zs_index)):
+    large_zs = np.append(large_zs, redshifts[int(large_zs_index[j])])
+    
+little_zs = np.array([])
+for j in range(len(little_zs_index)):
+    little_zs = np.append(little_zs, redshifts[int(little_zs_index[j])])
+    
+small_zs = little_zs #Renaming variables for convenience
+small_zs_flux = little_zs_flux
+small_zs_fluxerrs = little_zs_fluxerrs
+
+big_zs = large_zs
+big_zs_flux = large_zs_flux
+big_zs_fluxerrs = large_zs_fluxerrs
+
+#From Extended data set joint minimisation notebook:
+
+DerivedLpeak = 3.66 * (10**42) #erg/s
+DerivedLpeakErr = 0.06 * (10**41) #erg/s
+
+#Now I will complete chi-sqiuared minimisation for OmegaDE and w paramters using magnitudes
+
+big_zs_mag = np.array([]) #Creates an empty array for the mag of small redshift supernovae
+for j in range(len(large_zs_index)): #Uses a for loop to cycle through each index
+    big_zs_mag = np.append(big_zs_mag, eff_mags[int(large_zs_index[j])]) #Adds the mag of the specific small redshift indices from the list
+    
+big_zs_magerrs = np.array([]) #Same as above but for mag errors
+for j in range(len(large_zs_index)):
+    big_zs_magerrs = np.append(big_zs_magerrs, errors[int(large_zs_index[j])])
+    
+x_values = big_zs #Defines what each set of variables corresponds to
+y_values = big_zs_mag
+y_errors = big_zs_magerrs
+
+
+assert len(y_values) == len(x_values) #Ensures the arrays are of equal size and able to have chi-squared completed on them
+assert len(y_errors) == len(y_values)
+
+def Qmodel(x, omegaDE, w0, wa):
+    def integrand(z):
+        return ((1-omegaDE)*(1+z)**3 + omegaDE*(1+z)**(3*(1+(w0+(wa*(z/(1+z)))))))**(-0.5)
+    integral = np.zeros(len(x))
+    for i in range(len(x)):
+        integral[i] += quad(integrand, 0, x[i])[0]
+    integral = (c/H0) * integral
+    bigzflux = 0.001*(DerivedLpeak / (4 * np.pi * (integral**2) * (1+x)**2))/((3.086*10**24)**2)
+    return -20.45 - 2.5*np.log10(bigzflux)
+
+model_function = Qmodel # Note the absence of (), as we are not 
+                              # actually calling the function at this point.
+
+initial_values = np.array([0.7, -0.8, 0.05]) # Initial guess for parameters
+
+deg_freedom = x_values.size - initial_values.size
+print('DoF = {}'.format(deg_freedom))
+
+import numpy as np
+from scipy.integrate import quad
+from scipy.stats import chi2
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import corner
+
+
+def model(params, data, errors):
+    omegaDE, w0, wa = params
+    # Compute the chi squared statistic
+    chi2 = np.sum(((data - model_function(x_values, omegaDE, w0, wa))/errors)**2)
+    return chi2
+
+#you may wish to change the nsteps and burnin below depending on accuracy and processing time requirements - it can be quite lengthy!
+
+def MCMC(model, y_values, y_errs, nsteps=100000, ndim=3, burnin=20000, step_sizes=None):
+    # Initialize the chain with an array of zeros
+    chain = np.zeros((nsteps, ndim))
+    
+    # Set the initial guess for the parameters
+    params = np.array([0.7, -1.0, 0])
+    
+    # Initialize the chi squared statistic
+    chi2 = model(params, y_values, y_errs)
+    
+    # Set the default step sizes for each parameter
+    if step_sizes is None:
+        step_sizes = np.array([0.05, 0.05, 0.05])
+    
+    # Define the range of allowed parameters
+    omegaDE_min, omegaDE_max = 0.5, 1.0
+    w0_min, w0_max = -1.5, -0.5
+    wa_min, wa_max = -0.5, 0.5
+    
+    # Loop over the number of steps
+    for i in range(nsteps):
+        # Propose a new set of parameters
+        params_new = np.random.normal(params, step_sizes)
+        
+        # Check if the proposed parameters are within the allowed range
+        if (params_new[0] < omegaDE_min or params_new[0] > omegaDE_max or
+            params_new[1] < w0_min or params_new[1] > w0_max or
+            params_new[2] < wa_min or params_new[2] > wa_max):
+            # Reject the proposal if the parameters are outside the allowed range
+            continue
+        
+        # Compute the chi squared statistic for the new set of parameters
+        chi2_new = model(params_new, y_values, y_errs)
+        
+        # Compute the acceptance probability using the Metropolis-Hastings algorithm
+        acceptance_prob = np.exp(-0.5 * (chi2_new - chi2))
+        
+        # Generate a random number between 0 and 1
+        u = np.random.rand()
+        
+        # If the acceptance probability is greater than the random number, accept the new set of parameters
+        if acceptance_prob > u:
+            params = params_new
+            chi2 = chi2_new
+        
+        # Append the new set of parameters to the chain
+        chain[i] = params
+    
+    # Discard the burn-in period
+    chain = chain[burnin:]
+    
+    return chain
+# Specify the step sizes for each parameter
+step_sizes = np.array([0.05, 0.05, 0.05])
+
+# Run the MCMC
+chain = MCMC(model, y_values, y_errors, step_sizes=step_sizes)
+
+# Flatten the chain
+flattened_chain = chain.reshape(-1, 3)
+
+# Plot the 3D parameter space
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(flattened_chain[:, 0], flattened_chain[:, 1], flattened_chain[:, 2], s=1, c='k')
+ax.set_xlabel('OmegaDE')
+ax.set_ylabel('w0')
+ax.set_zlabel('wa')
+plt.show()
+
+# Plot the 2D contours
+#corner.corner(flattened_chain, labels=['OmegaDE', 'w0', 'wa'], show_titles=True, quantiles=[0.16, 0.5, 0.84], levels=(1-np.exp(-0.5), 1-np.exp(-0.5*4),1-np.exp(-0.5*9)), title_kwargs={"fontsize": 12})
+corner.corner(flattened_chain, labels=[r'$\Omega_{DE}$', r'$w_0$', r'$w_a$'], show_titles=False, levels=(1-np.exp(-0.5), 1-np.exp(-0.5*4),1-np.exp(-0.5*9)), title_kwargs={"fontsize": 12})
+plt.show()
+
+# Find the best-fit parameters and the standard errors
+best_fit_params = np.mean(flattened_chain, axis=0)
+std_errs = np.std(flattened_chain, axis=0)
+
+print("Best-fit parameters:", best_fit_params)
+print("Standard errors:", std_errs)
+
+fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+axs = axs.ravel()
+
+for i in range(3):
+    axs[i].hist(flattened_chain[:, i], bins=50, color='k', histtype='step')
+    axs[i].set_xlabel([r'$\Omega_{DE}$', r'$w_0$', r'$w_a$'][i])
+    axs[i].set_ylabel('Frequency')
+    axs[0].set_xlim(0.5, 1)
+    axs[1].set_xlim(-1.5, -0.5)
+    axs[2].set_xlim(-0.5, 0.5)
+
+plt.show()
+
+from scipy.stats import gaussian_kde
+
+
+# Create a figure with 3 subplots
+fig, axs = plt.subplots(1, 3, figsize=(15,5))
+
+# Plot omegaDE against w_0
+
+omegaDE = flattened_chain[:, 0]
+w0 = flattened_chain[:, 1]
+wa = flattened_chain[:, 2]
+
+axs[0].scatter(omegaDE, w0, s=3)
+axs[0].set_xlabel(r'$\Omega_{DE}$')
+axs[0].set_ylabel(r'$w_0$')
+axs[0].set_xlim(omegaDE.min(), omegaDE.max())
+axs[0].set_ylim(w0.min(), w0.max())
+
+# Estimate the probability density function
+data = np.vstack([omegaDE, w0])
+kde = gaussian_kde(data)
+
+# Define a grid of points
+x, y = np.mgrid[omegaDE.min():omegaDE.max():100j, w0.min():w0.max():100j]
+z = kde.evaluate(np.vstack([x.ravel(), y.ravel()]))
+
+# Add contours
+axs[0].contour(x, y, z.reshape(x.shape), colors='black', levels=10)
+
+# Plot omegaDE against w_a
+axs[1].scatter(omegaDE, wa, s=3)
+axs[1].set_xlabel('Omega_DE')
+axs[1].set_ylabel('w_a')
+axs[1].set_xlim(omegaDE.min(), omegaDE.max())
+axs[1].set_ylim(wa.min(), wa.max())
+
+# Estimate the probability density function
+data = np.vstack([omegaDE, wa])
+kde = gaussian_kde(data)
+
+# Define a grid of points
+x, y = np.mgrid[omegaDE.min():omegaDE.max():100j, wa.min():wa.max():100j]
+z = kde.evaluate(np.vstack([x.ravel(), y.ravel()]))
+
+# Add contours
+axs[1].contour(x, y, z.reshape(x.shape), colors='black', levels=10)
+
+# Plot w_0 against w_a
+axs[2].scatter(w0, wa, s=3)
+axs[2].set_xlabel('w_0')
+axs[2].set_ylabel('w_a')
+axs[2].set_xlim(w0.min(), w0.max())
+axs[2].set_ylim(wa.min(), wa.max())
+
+axs[2].contour(x, y, z.reshape(x.shape), colors='black', levels=10)
+
+# Estimate the probability density function
+data = np.vstack([w0, wa])
+kde = gaussian_kde(data)
+
+# Define a grid of points
+x, y = np.mgrid[w0.min():w0.max():100j, wa.min():wa.max():100j]
+z = kde.evaluate(np.vstack([x.ravel(), y.ravel()]))
+
+# Compute the mean and standard deviation of the omegaDE chain
+omegaDE_mean, omegaDE_std = np.mean(omegaDE), np.std(omegaDE)
+
+# Compute the mean and standard deviation of the w0 chain
+w0_mean, w0_std = np.mean(w0), np.std(w0)
+
+# Compute the mean and standard deviation of the wa chain
+wa_mean, wa_std = np.mean(wa), np.std(wa)
+
+# Print the best-fit values and errors
+print("Best-fit omegaDE = {:.4f} +/- {:.4f}".format(omegaDE_mean, omegaDE_std))
+print("Best-fit w0 = {:.4f} +/- {:.4f}".format(w0_mean, w0_std))
+print("Best-fit wa = {:.4f} +/- {:.4f}".format(wa_mean, wa_std))
+
+
+from scipy.stats import gaussian_kde
+
+# Create a figure with 3 subplots
+fig, axs = plt.subplots(1, 3, figsize=(15,5))
+
+# Plot omegaDE against w_0
+omegaDE = flattened_chain[:, 0]
+w0 = flattened_chain[:, 1]
+wa = flattened_chain[:, 2]
+
+axs[0].scatter(omegaDE, w0, s=3, alpha = 0.0075, color = 'blue')
+axs[0].set_xlabel(r'$\Omega_{DE}$')
+axs[0].set_ylabel(r'$w_0$')
+axs[0].set_xlim(omegaDE.min()+0.5, omegaDE.max()+0.05)
+axs[0].set_ylim(w0.min()-0.05, w0.max()-0.6)
+
+# Estimate the probability density function
+data = np.vstack([omegaDE, w0])
+kde = gaussian_kde(data)
+
+# Define a grid of points
+x, y = np.mgrid[omegaDE.min():omegaDE.max():100j, w0.min():w0.max():100j]
+z = kde.evaluate(np.vstack([x.ravel(), y.ravel()]))
+
+# Add contours
+c1 = axs[0].contour(x, y, z.reshape(x.shape), levels=[12], colors='red')
+c2 = axs[0].contour(x, y, z.reshape(x.shape), levels=[8], colors='red', linewidths=2)
+
+c1.collections[0].set_linestyle('dashed')
+
+# Plot omegaDE against w_a
+axs[1].scatter(omegaDE, wa, s=3, alpha = 0.03, color = 'blue')
+axs[1].set_xlabel(r'$\Omega_{DE}$')
+axs[1].set_ylabel(r'$w_a$')
+axs[1].set_xlim(omegaDE.min()+0.5, omegaDE.max()+0.05)
+axs[1].set_ylim(wa.min(), wa.max())
+
+# Estimate the probability density function
+data = np.vstack([omegaDE, wa])
+kde = gaussian_kde(data)
+
+# Define a grid of points
+x, y = np.mgrid[omegaDE.min():omegaDE.max():100j, wa.min():wa.max():100j]
+z = kde.evaluate(np.vstack([x.ravel(), y.ravel()]))
+
+# Add contours
+c1 = axs[1].contour(x, y, z.reshape(x.shape), levels=[5], colors='red')
+c2 = axs[1].contour(x, y, z.reshape(x.shape), levels=[3.3], colors='red', linewidths=2)
+
+c1.collections[0].set_linestyle('dashed')
+
+# Plot w_0 against w_a
+axs[2].scatter(w0, wa, s=3, alpha = 0.03, color = 'blue')
+axs[2].set_xlabel(r'$w_0$')
+axs[2].set_ylabel(r'$w_a$')
+axs[2].set_xlim(w0.min(), w0.max()-0.5)
+axs[2].set_ylim(wa.min(), wa.max())
+
+# Estimate the probability density function
+data = np.vstack([w0, wa])
+kde = gaussian_kde(data)
+
+# Define a grid of points
+x, y = np.mgrid[w0.min():w0.max():100j, wa.min():wa.max():100j]
+z = kde.evaluate(np.vstack([x.ravel(), y.ravel()]))
+
+# Add contours
+c1 = axs[2].contour(x, y, z.reshape(x.shape), levels=[2], colors='red')
+c2 = axs[2].contour(x, y, z.reshape(x.shape), levels=[1], colors='red', linewidths=2)
+
+c1.collections[0].set_linestyle('dashed')
