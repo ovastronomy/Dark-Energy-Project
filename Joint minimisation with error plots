@@ -1,0 +1,309 @@
+import numpy as np
+%matplotlib inline
+import matplotlib.pyplot as plt
+
+sndata = np.array(np.loadtxt('newdata.txt', dtype=str)) #Reads text file and converts its data to an numpy array
+
+names = np.array([]) #Setting up empty array for each data column
+redshifts = np.array([])
+eff_mags = np.array([])
+errors = np.array([])
+
+H0 = 75 #Current value of the Hubble parameter in km/s/Mpc
+c = 3*(10**5) #Speed of light in km/s
+
+for i in range(len(sndata)): #Loops over each supernova data set
+    names = np.append(names, sndata[i,0]) #Adds the corresponding variable to the array
+    redshifts = np.append(redshifts, sndata[i,1])
+    eff_mags = np.append(eff_mags, sndata[i,2])
+    errors = np.append(errors, sndata[i,3])
+
+#Now I have arrays for each variable saved as strings in arrays
+
+redshifts = np.asarray(redshifts, dtype = np.float64, order ='C') #Converts the numerical variables to floats
+eff_mags = np.asarray(eff_mags, dtype = np.float64, order ='C')
+errors = np.asarray(errors, dtype = np.float64, order ='C')
+
+eff_mags = eff_mags-19.31 #correction from raw data
+
+fluxes = np.array(np.power(10,((-20.5-eff_mags)/2.5))) #Solves the magnitude equation to find flux in erg/cm^2/s/Angstrom
+fluxerrs = (np.array(abs(np.power(10,((-20.5-(errors)/2.5)))))) #Works out the errors of the fluxes in erg/cm^2/s/Angstrom
+
+
+little_zs_index = np.array([]) #Creates an empty array for the indices of nearby (little redshift<0.11) supernovae
+for i in range(len(redshifts)): #Uses a for loop to check every element in the redshifts
+    if redshifts[i] < 0.11: #Condition for little redshifts
+        little_zs_index = np.append(little_zs_index, i) #Appends the array with the index number if the redshift is small
+        
+little_zs_flux = np.array([]) #Creates an empty array for the fluxes of small redshift supernovae
+for j in range(len(little_zs_index)): #Uses a for loop to cycle through each index
+    little_zs_flux = np.append(little_zs_flux, fluxes[int(little_zs_index[j])]) #Adds the flux of the specific small redshift indices from the list
+    
+little_zs_fluxerrs = np.array([]) #Same as above but for flux errors
+for j in range(len(little_zs_index)):
+    little_zs_fluxerrs = np.append(little_zs_fluxerrs, fluxerrs[int(little_zs_index[j])])
+    
+#Now below is the same but for large z>0.11
+
+large_zs_index = np.array([])
+for i in range(len(redshifts)):
+    if redshifts[i] > 0.11:
+        large_zs_index = np.append(large_zs_index, i)
+        
+large_zs_flux = np.array([])
+for j in range(len(large_zs_index)):
+    large_zs_flux = np.append(large_zs_flux, fluxes[int(large_zs_index[j])])
+    
+large_zs_fluxerrs = np.array([])
+for j in range(len(large_zs_index)):
+    large_zs_fluxerrs = np.append(large_zs_fluxerrs, fluxerrs[int(large_zs_index[j])])
+    
+#All for loops above works to get arrays of big and small redshift data for flux and the flux errors
+
+large_zs = np.array([]) #Same as above but collects the small and large redshifts in separate arrays
+for j in range(len(large_zs_index)):
+    large_zs = np.append(large_zs, redshifts[int(large_zs_index[j])])
+    
+little_zs = np.array([])
+for j in range(len(little_zs_index)):
+    little_zs = np.append(little_zs, redshifts[int(little_zs_index[j])])
+    
+small_zs = little_zs #Renaming variables for convenience
+small_zs_flux = little_zs_flux
+small_zs_fluxerrs = little_zs_fluxerrs
+
+big_zs = large_zs
+big_zs_flux = large_zs_flux
+big_zs_fluxerrs = large_zs_fluxerrs
+
+import scipy.integrate as integrate
+import scipy.special as special
+
+from scipy.integrate import quad
+
+#Now I will complete chi-squared minimisation for OmegaM and Lpeak simultaneously using magnitudes
+
+big_zs_mag = np.array([]) #Creates an empty array for the mag of small redshift supernovae
+for j in range(len(large_zs_index)): #Uses a for loop to cycle through each index
+    big_zs_mag = np.append(big_zs_mag, eff_mags[int(large_zs_index[j])]) #Adds the mag of the specific small redshift indices from the list
+    
+big_zs_magerrs = np.array([]) #Same as above but for mag errors
+for j in range(len(large_zs_index)):
+    big_zs_magerrs = np.append(big_zs_magerrs, errors[int(large_zs_index[j])])
+    
+    
+import scipy.stats    
+from scipy.optimize import minimize
+
+import scipy.integrate as integrate
+import scipy.special as special
+
+from scipy.integrate import quad
+
+#DerivedLpeak = 3.26610242 * (10**42) #erg/s
+#DerivedLpeakErr = 1.39740924 * (10**41) #erg/s
+
+#Now let's minimise to find the best fit OmegaM
+
+x_values = big_zs #Defines what each set of variables corresponds to
+y_values = big_zs_mag
+y_errors = big_zs_magerrs
+
+assert len(y_values) == len(x_values) #Ensures the arrays are of equal size and able to have chi-squared completed on them
+assert len(y_errors) == len(y_values)
+
+def Mag_model(x, Lpeak, omegaM):
+    def integrand(z):
+        return (omegaM * (1+z)**3 + (1 - omegaM))**(-0.5)
+    integral = np.zeros(len(x))
+    for i in range(len(x)):
+        integral[i] += quad(integrand, 0, x[i])[0]
+    integral = (c/H0) * integral
+    bigzflux = 0.001*((Lpeak*10**43) / (4 * np.pi * (integral**2) * (1+x)**2))/((3.086*10**24)**2)
+    return -20.45 - 2.5*np.log10(bigzflux)
+
+model_function = Mag_model # Note the absence of (), as we are not 
+                              # actually calling the function at this point.
+
+initial_values = np.array([1, 0.28]) # Initial guess for fit parameters
+
+deg_freedom = x_values.size - initial_values.size 
+print('DoF = {}'.format(deg_freedom))
+
+from scipy.optimize import curve_fit
+
+popt, pcov = curve_fit(model_function, 
+                       x_values,
+                       y_values,
+                       sigma=y_errors,
+                       absolute_sigma=True,
+                       p0=initial_values)
+
+
+a_solution, b_solution = popt
+
+print('best fit Lpeak = {} 10^43 erg/s'.format(a_solution))
+print('best fit Omega_M = {} '.format(b_solution))
+
+#below I show another way to complete the minimisation which also allows me to derive and plot the errors
+
+def chi_squared(model_params, model, x_data, y_data, y_error):
+    return np.sum(((y_data - model(x_data, *model_params))/y_error)**2)
+
+chisq_min = chi_squared(popt, # pass the array - no need to unpack
+                        model_function, 
+                        x_values, 
+                        y_values, 
+                        y_errors)
+
+print('minimised chi-squared = {}'.format(chisq_min))
+
+chisq_reduced = chisq_min/deg_freedom
+print('reduced chi^2 = {}'.format(chisq_reduced))
+
+import scipy.stats
+
+P_value = scipy.stats.chi2.sf(chisq_min, deg_freedom)
+print('P(chi^2_min, DoF) = {}'.format(P_value))
+
+from scipy.optimize import minimize
+
+fit_minimize = minimize(chi_squared,
+                        initial_values,
+                        args=(model_function,
+                              x_values,
+                              y_values,
+                              y_errors))
+
+print(fit_minimize.success) # Did the minimisation complete successfully?
+print(fit_minimize.message) # Additional termination output information
+# Resulting best fit parameter array is output as fit_minimize.x
+print('best fit Lpeak = {} erg/s'.format(fit_minimize.x[0]))
+print('best fit Omega_M = {} '.format(fit_minimize.x[1]))
+# Minimized value for chisq function is fit_minimize.fun
+print('minimised chi-squared = {}'.format(fit_minimize.fun))
+
+#Don't worry about any red runtime warning errors from running the above block
+#now plot the best fit function
+smooth_xvals = np.linspace(min(x_values), max(x_values), 1000)   
+
+plt.figure(figsize=(10,6))
+plt.errorbar(x_values, 
+             y_values, 
+             yerr=y_errors, 
+             marker='x', 
+             linestyle='None')
+
+plt.xlabel('Redshift')
+plt.ylabel('Magnitude')
+
+simulated_line = model_function(smooth_xvals, *popt) # unpack popt!
+plt.plot(smooth_xvals, simulated_line, 'r')
+plt.show()
+
+print('pcov =')
+print(pcov)
+
+errs_cov = np.sqrt(np.diag(pcov))
+print('errs_cov = {}'.format(errs_cov))
+
+a_err, b_err = errs_cov
+
+print('Parameter Lpeak = {} +/- {}'.format(a_solution, a_err))           
+print('Parameter Omega_M = {} +/- {}'.format(b_solution, b_err)) 
+print('Lpeak is of the order 10**43')
+
+#below is code to generate the 2d plot of the chi-squared space
+
+a_range = 2.25 * a_err
+b_range = 2.25 * b_err
+
+n_points = 100          
+
+# Generate grid and data
+a_axis = np.linspace(a_solution-a_range, a_solution+a_range, num=n_points)
+b_axis = np.linspace(b_solution-b_range, b_solution+b_range, num=n_points)
+plot_data = np.zeros((n_points, n_points))
+
+for i, b_val in enumerate(b_axis): 
+    for j, a_val in enumerate(a_axis): # Nested loops for clarity...
+        plot_data[i][j] = chi_squared([a_val, b_val], 
+                                      model_function, 
+                                      x_values, 
+                                      y_values, 
+                                      y_errors)
+
+plt.figure(figsize=(4,4))
+im = plt.imshow(plot_data, extent=(a_axis[0], a_axis[-1], 
+                                   b_axis[0], b_axis[-1]), 
+                origin='lower', aspect='auto')
+
+plt.xlim(a_solution-a_range, a_solution+a_range) # axis ranges
+plt.ylim(b_solution-b_range, b_solution+b_range)
+
+plt.ylabel('Omega_M') # Axis labels
+plt.xlabel('Lpeak $ 10^{43} $ erg/s')
+
+cbar=plt.colorbar(im, orientation='vertical') # # Colorbar and label
+cbar.set_label('$\chi^2$', fontsize=12)
+
+plt.plot(a_solution, b_solution, 'wo') # Add in best fit point and dashed lines
+plt.plot((a_solution, a_solution), (b_axis[0], b_solution), 
+         linestyle='--', color='w')
+plt.plot((a_axis[0], a_solution), (b_solution, b_solution), 
+         linestyle='--', color='w')
+#plt.xticks(np.arange(0.355, 0.375, 0.01))
+plt.show()
+
+#another plot of the chi-squared space below showing the contours for each error
+
+X, Y = np.meshgrid(a_axis, b_axis, indexing='xy')
+contour_data = plot_data - chisq_min
+
+levels = [1, 4, 9] # Contour levels to plot:
+# delta chi-squared of 1, 4 & 9 correspond to 1, 2 & 3 standard deviations
+plt.figure(figsize=(4,4))
+contour_plot = plt.contour(X, Y, contour_data, 
+                           levels=levels, colors='b', origin = 'lower')
+plt.clabel(contour_plot, levels, fontsize=12, inline=1, 
+           fmt=r'$\chi^2 = \chi^2_{min}+%1.0f$') 
+
+plt.xlabel('Lpeak $ 10^{43} erg/s $') # Axis labels
+plt.ylabel('Omega_M')
+
+import matplotlib.ticker as ticker # Allows you to modify the tick markers to 
+xtick_spacing = 0.02                # assess the errors from the chi-squared 
+ytick_spacing = 0.05               # contour plots.
+ 
+ax = plt.gca()
+ax.xaxis.set_major_locator(ticker.MultipleLocator(xtick_spacing))
+ax.yaxis.set_major_locator(ticker.MultipleLocator(ytick_spacing))
+
+plt.plot(a_solution, b_solution, 'ro') # Add in best fit point and dashed lines to axes
+plt.plot((a_solution, a_solution), (b_axis[0], b_solution), linestyle='--', color='r')
+plt.plot((a_axis[0], a_solution), (b_solution, b_solution), linestyle='--', color='r')
+plt.ylim([0.22, 0.315])
+plt.yticks(np.arange(0.22, 0.31, 0.02))
+plt.xlim([0.355, 0.38])
+plt.xticks(np.arange(0.36, 0.38, 0.01))
+plt.show()
+
+#you may wish to change the tick mark boundaries to fit with your data
+
+# Get hold of the contours from the plot
+contours = contour_plot.collections[0].get_paths()    
+# Get the set of points constituting the one confidence-interval contour
+onesigma_contour = contours[0].vertices       
+
+# Get the extrema along the two axes - max and min values
+# These should be symmetric about the solution...
+maxs = np.amax(onesigma_contour, axis=0)   
+mins = np.amin(onesigma_contour, axis=0)   
+errs_graphical = (maxs-mins)/2  # Calculate one standard error in the parameters
+
+a_error, b_error = errs_graphical
+
+print('Lpeak (10^43) = {} +/- {}'.format(a_solution, a_error))           
+print('Omega_M = {} +/- {}'.format(b_solution, b_error)) 
+Omega_l = 1-b_solution
+print('Omega Lamda =' , Omega_l)
