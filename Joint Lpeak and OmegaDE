@@ -1,0 +1,156 @@
+import numpy as np
+%matplotlib inline
+import matplotlib.pyplot as plt
+
+sndata = np.array(np.loadtxt('sn_data.txt', dtype=str)) #Reads text file and converts its data to an numpy array
+
+names = np.array([]) #Setting up empty array for each data column
+redshifts = np.array([])
+eff_mags = np.array([])
+errors = np.array([])
+
+H0 = 75 #Current value of the Hubble parameter in km/s/Mpc
+c = 3*(10**5) #Speed of light in km/s
+
+for i in range(len(sndata)): #Loops over each supernova data set
+    names = np.append(names, sndata[i,0]) #Adds the corresponding variable to the array
+    redshifts = np.append(redshifts, sndata[i,1])
+    eff_mags = np.append(eff_mags, sndata[i,2])
+    errors = np.append(errors, sndata[i,3])
+
+#Now I have arrays for each variable saved as strings in arrays
+
+redshifts = np.asarray(redshifts, dtype = np.float64, order ='C') #Converts the numerical variables to floats
+eff_mags = np.asarray(eff_mags, dtype = np.float64, order ='C')
+errors = np.asarray(errors, dtype = np.float64, order ='C')
+
+plt.figure(figsize=(10,6))
+plt.errorbar(redshifts, 
+             eff_mags, 
+             yerr=errors, # use y_errors array for y error bars
+             marker='x', # cross markers at each datapoint
+             linestyle='None') # no connecting lines
+
+plt.xlabel('Redshift') # axis labels and units
+plt.ylabel('Magnitude')
+plt.show() 
+
+fluxes = np.array(np.power(10,((-20.5-eff_mags)/2.5))) #Solves the magnitude equation to find flux in erg/cm^2/s/Angstrom
+fluxerrs = (np.array(abs(np.power(10,((-20.5-(errors)/2.5)))))) #Works out the errors of the fluxes in erg/cm^2/s/Angstrom
+
+
+little_zs_index = np.array([]) #Creates an empty array for the indices of nearby (little redshift<0.11) supernovae
+for i in range(len(redshifts)): #Uses a for loop to check every element in the redshifts
+    if redshifts[i] < 0.11: #Condition for little redshifts
+        little_zs_index = np.append(little_zs_index, i) #Appends the array with the index number if the redshift is small
+        
+little_zs_flux = np.array([]) #Creates an empty array for the fluxes of small redshift supernovae
+for j in range(len(little_zs_index)): #Uses a for loop to cycle through each index
+    little_zs_flux = np.append(little_zs_flux, fluxes[int(little_zs_index[j])]) #Adds the flux of the specific small redshift indices from the list
+    
+little_zs_fluxerrs = np.array([]) #Same as above but for flux errors
+for j in range(len(little_zs_index)):
+    little_zs_fluxerrs = np.append(little_zs_fluxerrs, fluxerrs[int(little_zs_index[j])])
+    
+#Now below is the same but for large z>0.11
+
+large_zs_index = np.array([])
+for i in range(len(redshifts)):
+    if redshifts[i] > 0.11:
+        large_zs_index = np.append(large_zs_index, i)
+        
+large_zs_flux = np.array([])
+for j in range(len(large_zs_index)):
+    large_zs_flux = np.append(large_zs_flux, fluxes[int(large_zs_index[j])])
+    
+large_zs_fluxerrs = np.array([])
+for j in range(len(large_zs_index)):
+    large_zs_fluxerrs = np.append(large_zs_fluxerrs, fluxerrs[int(large_zs_index[j])])
+    
+#All for loops above works to get arrays of big and small redshift data for flux and the flux errors
+
+large_zs = np.array([]) #Same as above but collects the small and large redshifts in separate arrays
+for j in range(len(large_zs_index)):
+    large_zs = np.append(large_zs, redshifts[int(large_zs_index[j])])
+    
+little_zs = np.array([])
+for j in range(len(little_zs_index)):
+    little_zs = np.append(little_zs, redshifts[int(little_zs_index[j])])
+    
+small_zs = little_zs #Renaming variables for convenience
+small_zs_flux = little_zs_flux
+small_zs_fluxerrs = little_zs_fluxerrs
+
+big_zs = large_zs
+big_zs_flux = large_zs_flux
+big_zs_fluxerrs = large_zs_fluxerrs
+
+import scipy.integrate as integrate
+import scipy.special as special
+
+from scipy.integrate import quad
+
+#Now I will complete chi-squared minimisation for OmegaM and Lpeak simultaneously using magnitudes
+
+big_zs_mag = np.array([]) #Creates an empty array for the mag of small redshift supernovae
+for j in range(len(large_zs_index)): #Uses a for loop to cycle through each index
+    big_zs_mag = np.append(big_zs_mag, eff_mags[int(large_zs_index[j])]) #Adds the mag of the specific small redshift indices from the list
+    
+big_zs_magerrs = np.array([]) #Same as above but for mag errors
+for j in range(len(large_zs_index)):
+    big_zs_magerrs = np.append(big_zs_magerrs, errors[int(large_zs_index[j])])
+
+import scipy.stats    #libraries I will need!
+from scipy.optimize import minimize
+
+import scipy.integrate as integrate
+import scipy.special as special
+
+from scipy.integrate import quad
+
+#Lpeak found from approx = 3.18... * (10**42) #erg/s which we will see be derived!
+#DerivedLpeakErr = 1.39... * (10**41) #erg/s
+
+#Now let's minimise to find the best fit OmegaM
+
+x_values = big_zs #Defines what each set of variables corresponds to
+y_values = big_zs_mag
+y_errors = big_zs_magerrs #I have split the data set to use only large >0.1 redshift SN1a
+
+assert len(y_values) == len(x_values) #Ensures the arrays are of equal size and able to have chi-squared completed on them
+assert len(y_errors) == len(y_values)
+
+def Mag_model(x, Lpeak, omegaM): #Define our model from the theory! Assumes k = 0 in Friedmann Eqn
+    def integrand(z):
+        return (omegaM * (1+z)**3 + (1 - omegaM))**(-0.5)
+    integral = np.zeros(len(x))
+    for i in range(len(x)):
+        integral[i] += quad(integrand, 0, x[i])[0] #Uses the quad library to numerically solve integral
+    integral = (c/H0) * integral
+    bigzflux = 0.001*((Lpeak*10**43) / (4 * np.pi * (integral**2) * (1+x)**2))/((3.086*10**24)**2) #Includes a conversion factor
+    return -20.45 - 2.5*np.log10(bigzflux) #This is the magnitude flux conversion with correction factor
+
+model_function = Mag_model # Note the absence of (), as we are not 
+                              # actually calling the function at this point.
+
+initial_values = np.array([1, 0.28]) # Initial guess for fit parameters
+
+#Below are the statistics which I will discuss in more depth
+deg_freedom = x_values.size - initial_values.size 
+print('DoF = {}'.format(deg_freedom))
+
+from scipy.optimize import curve_fit
+
+popt, pcov = curve_fit(model_function, 
+                       x_values,
+                       y_values,
+                       sigma=y_errors,
+                       absolute_sigma=True, 
+                       p0=initial_values)
+
+a_solution, b_solution = popt
+
+print('best fit Lpeak = {} 10^43 erg/s'.format(a_solution))
+print('best fit Omega_M = {} '.format(b_solution))
+
+print("Therefore the dark energy density is" , 1-b_solution)
