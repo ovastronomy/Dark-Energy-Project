@@ -1,0 +1,159 @@
+#Data set from Baseline high-ell Planck EE power spectra (2 <= ell <= 1996). COM_PowerSpect_CMB-EE-full_R3.01.txt. planck satellite data archive
+
+import numpy as np
+import matplotlib.pyplot as plt
+import sympy
+import mpmath
+
+# Load the data from the text file
+data = np.loadtxt("COM_PowerSpect_CMB-TT-full_R3.011.txt")
+
+# Extract the columns of data
+l = data[:, 0]
+Dl = data[:, 1]
+dDl_minus = data[:, 2]
+dDl_plus = data[:, 3]
+
+# Plot the power spectrum
+plt.figure(figsize=(12,8))
+plt.errorbar(l, Dl, yerr=[dDl_minus, dDl_plus], fmt=".", alpha = 0.2, color = 'purple')
+plt.xlabel("Multipole Moment l")
+plt.ylabel(r"TT: Temperature anisotropy power spectrum ($\mu$K$^2$)")
+plt.show()
+
+ls = np.array([])
+
+for i in range(len(l)):
+    ls = np.append(ls, int(l[i]))
+
+import camb
+
+Dl_errs = abs((dDl_plus + dDl_minus) / 2)
+
+x_values = ls #efines what each set of variables corresponds to
+y_values = Dl
+y_errors = Dl_errs
+
+
+assert len(y_values) == len(x_values) #Ensures the arrays are of equal size and able to have chi-squared completed on them
+assert len(y_errors) == len(y_values)
+
+print(len(x_values))
+
+def cmbmodel(x, w0):
+    pars = camb.CAMBparams()
+    #pars.set_cosmology(H0=70, ombh2=0.022, omch2=0.3-0.022, mnu=0, omk=0, tau=0.06)
+    #pars.InitPower.set_params(As=2e-9, ns=0.965, r=0)
+    pars.set_cosmology(H0=67.5, ombh2=0.027, omch2=0.122, mnu=0.06, omk=0, tau=0.06)
+    pars.InitPower.set_params(As=2.1e-9, ns=0.995, r=0) #ns=0.965
+    pars.set_dark_energy(w=w0)
+    #pars.set_params(w=-1.0, wa=0, cs2=1.0)
+    pars.set_for_lmax(len(x), lens_potential_accuracy=0);
+
+    #calculate results for these parameters
+    results = camb.get_results(pars)
+
+    #get dictionary of CAMB power spectra
+    powers =results.get_cmb_power_spectra(pars, CMB_unit='muK')
+    #for name in powers: print(name)
+
+    totCL=powers['total']
+    outputs = np.array([])
+    for i in range(len(x)):
+        outputs = np.append(outputs, (totCL[:,0])[i])
+    outputs = (totCL[:,0])[:(len(x)-len(totCL[:,0]))]
+    return outputs
+
+
+model_function = cmbmodel # Note the absence of (), as we are not 
+                              # actually calling the function at this point.
+
+initial_values = np.array([-0.95]) # Initial guess for w
+
+deg_freedom = x_values.size - initial_values.size
+print('DoF = {}'.format(deg_freedom))
+
+def model(param, data, errors):
+    w = param
+    cmb = cmbmodel(x_values, w)
+    chi2 = np.sum(((data - cmb) / errors) ** 2)
+    return chi2
+
+def metropolis(initial_values, model_function, model, x_values, y_values, y_errors, n_steps=10000):
+    # Define the starting point of the Markov Chain
+    current_values = initial_values.copy()
+    current_chi2 = model(current_values, y_values, y_errors)
+    chain = np.zeros((n_steps, initial_values.size))
+    chi2_array = np.zeros(n_steps)
+    accepted = 0
+    
+    for i in range(n_steps):
+        # Propose a new set of values
+        proposed_values = current_values + np.random.normal(0, 0.1, size=current_values.size)
+        proposed_chi2 = model(proposed_values, y_values, y_errors)
+        
+        # Decide whether to accept or reject the proposal
+        acceptance_prob = np.exp(-0.5 * (proposed_chi2 - current_chi2))
+        if acceptance_prob >= np.random.rand():
+            current_values = proposed_values.copy()
+            current_chi2 = proposed_chi2
+            accepted += 1
+            
+        # Store the results
+        chain[i, :] = current_values
+        chi2_array[i] = current_chi2
+        
+        #print([i])
+        
+    acceptance_ratio = accepted / n_steps
+    print("Acceptance ratio: {:.2f}".format(acceptance_ratio))
+    return chain, chi2_array
+
+# Run the MCMC
+chain, chi2_array = metropolis(initial_values, model_function, model, x_values, y_values, y_errors)
+
+# Plot the MCMC chain
+fig, ax = plt.subplots(figsize=(12, 8))
+for i in range(initial_values.size):
+    ax.plot(chain[:, i], alpha=0.5, label=r'$w_' + str(i) + '$')
+ax.set_xlabel("Steps")
+ax.set_ylabel(r"$w$")
+ax.legend(loc="best")
+plt.show()
+
+# Plot the distribution of the chi squared values
+fig, ax = plt.subplots(figsize=(12, 8))
+ax.hist(chi2_array, bins=100, edgecolor='k', alpha=0.5)
+ax.set_xlabel(r"$\chi^2$")
+ax.set_ylabel("Frequency")
+plt.show()
+
+# Plot the distribution of the chi squared values
+fig, ax = plt.subplots(figsize=(12, 8))
+ax.hist(chi2_array/deg_freedom, bins=100, edgecolor='k', alpha=0.5)
+ax.set_xlabel(r"Reduced $\chi^2$")
+ax.set_ylabel("Frequency")
+plt.show()
+
+#x = np.arange(100,1000,1)
+#y = np.array([])
+#for i in range(len(x)):
+    #y = np.append(y, -0.866)
+
+
+plt.figure(figsize=(12,8))
+plt.plot(chain[:, i], alpha=1, label=r'$w_' + str(i) + '$', color='r')
+#plt.plot(x, y, color = 'b')
+plt.xlabel("Steps")
+plt.ylabel("w")
+plt.xlim([100,10000])
+plt.ylim(-0.85, -0.88)
+plt.legend()
+plt.show()
+
+
+print(np.mean(chain[:, i]))
+print(np.std(chain[:, i]))
+
+print(min(chi2_array))
+
