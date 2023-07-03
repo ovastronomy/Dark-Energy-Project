@@ -1,0 +1,293 @@
+#COM_PowerSpect_CMB-base-plikHM-TTTEEE-lowl-lowE-lensing-minimum-theory_R3.01.txt
+
+#L: Multipole moment value
+#TT: Temperature anisotropy power spectrum (in micro-Kelvin squared)
+#TE: Cross-correlation between temperature and polarization anisotropies
+#EE: Polarization anisotropy power spectrum (in micro-Kelvin squared)
+#BB: Cross-correlation between B-mode polarization anisotropies
+#PP: B-mode polarization anisotropy power spectrum (in micro-Kelvin squared)
+
+import matplotlib.pyplot as plt
+
+# Open the text file and read the data
+with open('COM_PowerSpect_CMB-base-plikHM-TTTEEE-lowl-lowE-lensing-minimum-theory_R3.01.txt', 'r') as file:
+    data = file.readlines()
+
+# Split each line of data into its columns
+l, tt, te, ee, bb, pp = [], [], [], [], [], []
+for line in data:
+    l_, tt_, te_, ee_, bb_, pp_ = line.strip().split()
+    l.append(int(l_))
+    tt.append(float(tt_))
+    te.append(float(te_))
+    ee.append(float(ee_))
+    bb.append(float(bb_))
+    pp.append(float(pp_))
+
+# Plot the data on separate axes
+fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(nrows=5, sharex=True)
+ax1.plot(l, tt)
+ax2.plot(l, te)
+ax3.plot(l, ee)
+ax4.plot(l, bb)
+ax5.plot(l, pp)
+
+# Add labels to each axis
+ax1.set_ylabel('TT')
+ax2.set_ylabel('TE')
+ax3.set_ylabel('EE')
+ax4.set_ylabel('BB')
+ax5.set_ylabel('PP')
+ax5.set_xlabel('L')
+
+# Show the plot
+plt.show()
+
+# create the figure and axes objects
+fig, axs = plt.subplots(nrows=5, ncols=1, figsize=(10, 20), sharex=True)
+
+# plot the data on each axis
+axs[0].plot(l, tt)
+#axs[0].set_title("tt")
+axs[1].plot(l, te)
+#axs[1].set_title("te")
+axs[2].plot(l, ee)
+#axs[2].set_title("ee")
+axs[3].plot(l, bb)
+#axs[3].set_title("bb")
+axs[4].plot(l, pp)
+#axs[4].set_title("pp")
+axs[0].set_ylabel('TT')
+axs[1].set_ylabel('TE')
+axs[2].set_ylabel('EE')
+axs[3].set_ylabel('BB')
+axs[4].set_ylabel('PP')
+axs[4].set_xlabel('L')
+
+# remove space between plots
+plt.subplots_adjust(hspace=0)
+
+# show the plot
+plt.show()
+
+%matplotlib inline
+%config InlineBackend.figure_format = 'retina'
+import sys, platform, os
+import matplotlib
+from matplotlib import pyplot as plt
+import numpy as np
+import camb
+from camb import model, initialpower
+
+#Set up a new set of parameters for CAMB
+pars = camb.CAMBparams()
+#This function sets up CosmoMC-like settings, with one massive neutrino and helium set using BBN consistency
+pars.set_cosmology(H0=70, ombh2=0.022, omch2=0.122, mnu=0.06, omk=0, tau=0.06)
+pars.InitPower.set_params(As=2e-9, ns=0.965, r=0)
+pars.set_for_lmax(2500, lens_potential_accuracy=0);
+
+#calculate results for these parameters
+results = camb.get_results(pars)
+
+#get dictionary of CAMB power spectra
+powers =results.get_cmb_power_spectra(pars, CMB_unit='muK')
+for name in powers: print(name)
+
+#plot the total lensed CMB power spectra versus unlensed, and fractional difference
+totCL=powers['total']
+unlensedCL=powers['unlensed_scalar']
+print(totCL.shape)
+#Python CL arrays are all zero based (starting at L=0), Note L=0,1 entries will be zero by default.
+#The different CL are always in the order TT, EE, BB, TE (with BB=0 for unlensed scalar results).
+ls = np.arange(totCL.shape[0])
+fig, ax = plt.subplots(2,2, figsize = (12,12))
+ax[0,0].plot(ls,totCL[:,0], color='k')
+ax[0,0].plot(ls,unlensedCL[:,0], color='r')
+ax[0,0].set_title('TT')
+ax[0,1].plot(ls[2:], 1-unlensedCL[2:,0]/totCL[2:,0]);
+ax[0,1].set_title(r'$\Delta TT$')
+ax[1,0].plot(ls,totCL[:,1], color='k')
+ax[1,0].plot(ls,unlensedCL[:,1], color='r')
+ax[1,0].set_title(r'$EE$')
+ax[1,1].plot(ls,totCL[:,3], color='k')
+ax[1,1].plot(ls,unlensedCL[:,3], color='r')
+ax[1,1].set_title(r'$TE$');
+for ax in ax.reshape(-1): ax.set_xlim([2,2500]);
+
+plt.figure(figsize = (24,12))
+
+plt.scatter(l, tt, c='r', alpha=0.5, marker='.')
+plt.plot(ls,unlensedCL[:,0], color='b', label="H0 = 70 km/s/Mpc, w=-1")
+plt.xlim([0,2500])
+plt.xlabel("Multipole Moment l")
+plt.ylabel("TT: Temperature anisotropy power spectrum (micro-Kelvin squared)")
+plt.legend()
+plt.show()
+
+pars = camb.CAMBparams()
+#pars.set_cosmology(H0=70, ombh2=0.022, omch2=0.3-0.022, mnu=0, omk=0, tau=0.06)
+#pars.InitPower.set_params(As=2e-9, ns=0.965, r=0)
+pars.set_cosmology(H0=67.5, ombh2=0.027, omch2=0.122, mnu=0.06, omk=0, tau=0.06)
+pars.InitPower.set_params(As=2.1e-9, ns=0.995, r=0)
+pars.set_dark_energy(w=-1.5)
+#pars.set_params(w=-1.0, wa=0, cs2=1.0)
+pars.set_for_lmax(2500, lens_potential_accuracy=0);
+
+#calculate results for these parameters
+results = camb.get_results(pars)
+
+#get dictionary of CAMB power spectra
+powers =results.get_cmb_power_spectra(pars, CMB_unit='muK')
+for name in powers: print(name)
+    
+totCL=powers['total']
+unlensedCL=powers['unlensed_scalar']
+print(totCL.shape)
+
+w1 = totCL[:,0]
+w11 = totCL[:,1]
+
+pars = camb.CAMBparams()
+#pars.set_cosmology(H0=70, ombh2=0.022, omch2=0.3-0.022, mnu=0, omk=0, tau=0.06)
+#pars.InitPower.set_params(As=2e-9, ns=0.965, r=0)
+pars.set_cosmology(H0=67.5, ombh2=0.027, omch2=0.122, mnu=0.06, omk=0, tau=0.06)
+pars.InitPower.set_params(As=2.1e-9, ns=0.995, r=0) #ns=0.965
+pars.set_dark_energy(w=-1)
+#pars.set_params(w=-1.0, wa=0, cs2=1.0)
+pars.set_for_lmax(2500, lens_potential_accuracy=0);
+
+#calculate results for these parameters
+results = camb.get_results(pars)
+
+#get dictionary of CAMB power spectra
+powers =results.get_cmb_power_spectra(pars, CMB_unit='muK')
+for name in powers: print(name)
+    
+totCL=powers['total']
+unlensedCL=powers['unlensed_scalar']
+print(totCL.shape)
+
+w2 = totCL[:,0]
+w22 = totCL[:,1]
+
+pars = camb.CAMBparams()
+#pars.set_cosmology(H0=70, ombh2=0.022, omch2=0.3-0.022, mnu=0, omk=0, tau=0.06)
+#pars.InitPower.set_params(As=2e-9, ns=0.965, r=0)
+pars.set_cosmology(H0=67.5, ombh2=0.027, omch2=0.122, mnu=0.06, omk=0, tau=0.06)
+pars.InitPower.set_params(As=2.1e-9, ns=0.995, r=0)
+pars.set_dark_energy(w=-0.5)
+#pars.set_params(w=-1.0, wa=0, cs2=1.0)
+pars.set_for_lmax(2500, lens_potential_accuracy=0);
+
+#calculate results for these parameters
+results = camb.get_results(pars)
+
+#get dictionary of CAMB power spectra
+powers =results.get_cmb_power_spectra(pars, CMB_unit='muK')
+for name in powers: print(name)
+    
+totCL=powers['total']
+unlensedCL=powers['unlensed_scalar']
+print(totCL.shape)
+
+w3 = totCL[:,0]
+w33 = totCL[:,1]
+
+plt.figure(figsize = (12,6))
+
+plt.scatter(l, tt, c='r', alpha=0.35, marker='x', label="Data from Planck")
+plt.plot(ls,w1, color='b', label="w=-1.5")
+plt.plot(ls,w2, color='g', label="w=-1")
+plt.plot(ls,w3, color='purple', label="w=-0.5")
+plt.xlim([0,2500])
+plt.xlabel("Multipole Moment l")
+plt.ylabel("TT: Temperature anisotropy power spectrum (micro-Kelvin squared)")
+plt.legend(fontsize=22)
+plt.show()
+
+plt.figure(figsize = (12,6))
+
+plt.scatter(l, ee, c='r', alpha=0.35, marker='x', label="Data from Planck")
+plt.plot(ls,w11, color='b', label="w=-1.5")
+plt.plot(ls,w22, color='g', label="w=-1")
+plt.plot(ls,w33, color='purple', label="w=-0.5")
+plt.xlim([0,2500])
+plt.xlabel("Multipole Moment l")
+plt.ylabel("EE: Polarization anisotropy power spectrum (micro-Kelvin squared)")
+plt.legend(fontsize=20)
+plt.show()
+
+import numpy as np
+%matplotlib inline
+import matplotlib.pyplot as plt
+
+import scipy.stats    
+from scipy.optimize import minimize
+
+import scipy.integrate as integrate
+import scipy.special as special
+
+from scipy.integrate import quad
+
+# Load the data from the text file
+data = np.loadtxt("COM_PowerSpect_CMB-TT-full_R3.011.txt")
+
+# Extract the columns of data
+l = data[:, 0]
+Dl = data[:, 1]
+dDl_minus = data[:, 2]
+dDl_plus = data[:, 3]
+
+# Plot the power spectrum
+plt.figure(figsize=(12,8))
+plt.errorbar(l, Dl, yerr=[dDl_minus, dDl_plus], fmt=".", alpha = 0.2, color = 'purple')
+plt.xlabel("Multipole Moment l")
+plt.ylabel(r"TT: Temperature anisotropy power spectrum ($\mu$K$^2$)")
+plt.show()
+
+plt.figure(figsize = (12,6))
+
+plt.plot(ls,w1, color='g', label="w=-1.5")
+plt.plot(ls,w2, color='b', label="w=-1")
+plt.plot(ls,w3, color='red', label="w=-0.5")
+plt.errorbar(l, Dl, yerr=[dDl_minus, dDl_plus], fmt=".", alpha = 0.1, color = 'purple')
+
+plt.xlim([0,2500])
+plt.xlabel("Multipole Moment l", fontsize = 14)
+plt.ylabel(r"Temperature anisotropy power spectrum ($\mu$K$^2$)", fontsize = 16)
+plt.legend(fontsize=22)
+plt.show()
+
+pars = camb.CAMBparams()
+#pars.set_cosmology(H0=70, ombh2=0.022, omch2=0.3-0.022, mnu=0, omk=0, tau=0.06)
+#pars.InitPower.set_params(As=2e-9, ns=0.965, r=0)
+pars.set_cosmology(H0=67.5, ombh2=0.027, omch2=0.122, mnu=0.06, omk=0, tau=0.06)
+pars.InitPower.set_params(As=2.1e-9, ns=0.995, r=0)
+pars.set_dark_energy(w=-0.8630709142720204 )
+#pars.set_params(w=-1.0, wa=0, cs2=1.0)
+pars.set_for_lmax(2500, lens_potential_accuracy=0);
+
+#calculate results for these parameters
+results = camb.get_results(pars)
+
+#get dictionary of CAMB power spectra
+powers =results.get_cmb_power_spectra(pars, CMB_unit='muK')
+for name in powers: print(name)
+    
+totCL=powers['total']
+unlensedCL=powers['unlensed_scalar']
+print(totCL.shape)
+
+w4 = totCL[:,0]
+w44 = totCL[:,1]
+
+plt.figure(figsize = (12,6))
+
+plt.plot(ls,w4, color='b', label="w=-0.863 (Best fit from MCMC)", linestyle = 'dashed')
+plt.errorbar(l, Dl, yerr=[dDl_minus, dDl_plus], fmt=".", alpha = 0.1, color = 'purple')
+
+plt.xlim([0,2500])
+plt.xlabel("Multipole Moment l")
+plt.ylabel(r"TT: Temperature anisotropy power spectrum ($\mu$K$^2$)")
+plt.legend(fontsize=22)
+plt.show()
